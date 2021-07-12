@@ -1,6 +1,7 @@
-# File per la scrittura del metodo del simplesso
 import numpy as np
 
+
+# I PROBLEMI DEVONO ESSERE IN FORMA UGUAGLIANZA
 
 class LinearProgram:
     def __init__(self, A=np.empty([0, 0]), b=np.empty([0, 0]), c=np.empty([0, 0]), minmax="MAX"):
@@ -14,7 +15,7 @@ class LinearProgram:
         self.bounded = False
 
 
-def get_vertex(B: np.array, LP: LinearProgram) -> np.array:
+def get_vertex(B: np.array, LP: LinearProgram) -> np.matrix:
     """
     Restituisci il vertice
 
@@ -37,7 +38,8 @@ def get_vertex(B: np.array, LP: LinearProgram) -> np.array:
 
 def edge_transition(LP: LinearProgram, B: np.array, q: int):
     """
-    Questa funzione implementa la transizione da un vertice al successivo per la
+    Questa funzione implementa la transizione da un vertice al successivo per la di ottimizzazione. Nel metodo del
+    simplesso mi devo muovere da un vertice al successivo, qui uso l'euristica del MIN_RATIO.
 
     :param q: Indice della variable che uscirà di base
     """
@@ -95,3 +97,68 @@ def get_mu_v(cv: np.array, Ab: np.array, Av: np.array, cb: np.array) -> np.array
     base_cost = np.dot(np.transpose(reduced_cost), cb)
     mu_v = cv - base_cost
     return mu_v
+
+
+def step_LP(B: np.array, LP: LinearProgram):
+    """
+    Questa funzione restituisce la nuova matrice di base nella iterazione della fase di ottimizzazione. NON restituisco:
+        * Il nuovo vertice
+        * Vettore dei moltiplicatori associati alla matrice A dei vincoli (lambda)
+        * Vettore dei moltiplicatori associato ai vincoli di non negatività (non di base)
+
+    :param B:   Matrice di base alla iterazione precedente
+    :param LP:  Problema da ottimizzare
+    :return:
+    """
+    A = LP.A
+    b = LP.b
+    c = LP.c
+    n = A.shape[1]
+    B.sort()
+    b_inds = B
+    B_set = set(B)
+    x_set = set(range(1, n + 1))
+    n_inds = sorted(x_set.difference(B_set))
+    AB = A[:, b_inds]
+    Av = np.delete(A, b_inds, axis=1)
+    xB = np.linalg.solve(AB, b)
+    cB = c[b_inds]
+    lambda_mul = np.linalg.solve(AB, cB)
+    cV = np.delete(c, b_inds)
+    mu_v = cV - np.dot(np.transpose(Av), lambda_mul)
+    q, p, xq, delta = 0, 0, np.inf, np.inf
+    for i in range(0, mu_v.shape[0]):
+        for j in range(0, mu_v.shape[1]):
+            if mu_v[i][j] < 0:
+                pi, xi = edge_transition(LP, B, i)
+                if mu_v[i][j] * xi < delta:
+                    q, p, xq, delta = i, pi, xi, mu_v[i][j] * xi
+            if q == 0:
+                return (B, True)
+    if np.isinf(xq):
+        raise ValueError("Unbounded problem")
+    j = next(index for index in B if b_inds[p] == B[index])
+    B[j] = n_inds[q]  # swap indices
+    return (B, False)
+
+
+def minimize_lp(B, LP):
+    done = False
+    while not done:
+        B, done = step_LP(B, LP)
+    return B
+
+
+if __name__ == '__main__':
+    # Diet problem example
+    # Ricordati che nei libri gli indici partono da 1 QUI PARTONO DA 0 (sottrai 1)
+    A = np.array([[1, 1, 1, 0], [-4, 2, 0, 1]])
+    b = np.array([[9], [2]])
+    x = np.empty([4, 1])
+    c = np.array([[6], [3], [0], [2]])
+    LP = LinearProgram(A, b, c)
+    B = np.array([2, 3])
+    minimize_lp(B, LP)
+    AB = A[:, B]
+    xB = np.linalg.solve(A, b)
+    print(xB)
