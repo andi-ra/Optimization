@@ -1,7 +1,8 @@
 import numpy as np
 
-
 # I PROBLEMI DEVONO ESSERE IN FORMA UGUAGLIANZA
+from docplex.mp.model import Model
+
 
 class LinearProgram:
     def __init__(self, A=np.empty([0, 0]), b=np.empty([0, 0]), c=np.empty([0, 0]), minmax="MAX"):
@@ -139,7 +140,7 @@ def step_LP(B: np.array, LP: LinearProgram):
         raise ValueError("Unbounded problem")
     j = next(index for index in B if b_inds[p] == B[index])
     B[j] = n_inds[q]  # swap indices
-    return (B, False)
+    return (B, False)  # new vertex but not optimal
 
 
 def minimize_lp(B, LP):
@@ -149,16 +150,37 @@ def minimize_lp(B, LP):
     return B
 
 
+def solve_LP_no_first_base(B: np.array, LP: LinearProgram):
+    A = LP.A
+    b = LP.b
+    c = LP.c
+    m, n = A.shape
+    z = np.ones(m)
+    lista = [+1 if b[j] >= 0 else -1 for j in b if b[j] >= 0]
+    a = np.array(lista)
+    Z = np.diag(a)
+    A_concat = np.concatenate(A, Z, 1)
+    b_new = b
+    c_new = np.concatenate(np.zeros(n), z, 0)
+    LP_init = LinearProgram(A_concat, b_new, c_new)
+    B = np.arange(start=1, stop=m + 1, step=1) + n
+
+    for i in B:
+        if B[i] > n:
+            raise ValueError("Infeasible")
+
+    solve_LP_no_first_base(B, LP_init)
+
+
 if __name__ == '__main__':
-    # Diet problem example
-    # Ricordati che nei libri gli indici partono da 1 QUI PARTONO DA 0 (sottrai 1)
-    A = np.array([[1, 1, 1, 0], [-4, 2, 0, 1]])
-    b = np.array([[9], [2]])
-    x = np.empty([4, 1])
-    c = np.array([[6], [3], [0], [2]])
-    LP = LinearProgram(A, b, c)
-    B = np.array([2, 3])
-    minimize_lp(B, LP)
-    AB = A[:, B]
-    xB = np.linalg.solve(A, b)
-    print(xB)
+    m = Model(name='telephone_production')
+    z1 = m.continuous_var(name='z1')
+    z2 = m.continuous_var(name='z2')
+    x1 = m.continuous_var(name='x1')
+    x2 = m.continuous_var(name='x2')
+    x3 = m.continuous_var(name='x3')
+    m.add_constraint(2 * x1 - x2 + 2 * x3 + z1 == 1)
+    m.add_constraint(5 * x1 + x2 - 3 * x3 - z2 == -2)
+    m.minimize(z1 + z2)
+    s = m.solve()
+    m.print_solution()
