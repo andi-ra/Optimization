@@ -16,13 +16,99 @@ class LinearProgram:
         self.bounded = False
 
 
+class CostraintMatrix:
+    """Represents the constraint matrix :math:`A`
+
+        Questa classe rappresenta la matrice dei vincoli del problema. È stata aggiornata con metodi accessori per
+        garantire la consistenza della matrice durante le varie operazioni. Secondo il motto
+        "`We are all consenting adults <https://python-guide-chinese.readthedocs.io/zh_CN/latest/writing/style.html
+        #we-are-all-consenting-adults>`_" possono essere modificati ma queste guardie proteggono contro accidentalità.
+
+        .. Caution:: I PROBLEMI DEVONO ESSERE IN FORMA STANDARD. [notazione]_
+
+        .. [notazione] Algorithms for Optimization, Mykel J. Kochenderfer, Tim A. Wheeler
+        """
+
+    def __init__(self, constraint_matrix: np.ndarray = np.empty([0, 0]), base_indexes: set = None) -> None:
+        """
+        Questo metodo inizializza le seguenti strutture dati:
+            * Matrice dei vincoli totale del problema
+            * Insieme degli indici che rappresentano le colonne della matrice di base
+            * Insieme degli indici che rappresentano le colonne della matrice NON di base
+        La cosa particolare è che l'insieme degli indici è fatto tramite un *mutable* dunque bisogna fare attenzione a
+        come viene usato, in quanto se inizializzassi nuovamente l'insieme degli indici questo conserva lo stato come
+        `qui <https://docs.python-guide.org/writing/gotchas/>`_. Per evitare, metto una guardia sul empty set.
+
+        :param constraint_matrix: Matrice dei vincoli da dare in pasto alla classe CostraintMatrix
+        :param base_indexes: Questa è la partizione iniziale che devi fornire se non vuoi risolvere un prima fase.
+        """
+        if base_indexes is None:
+            base_indexes = set()
+        self._A = constraint_matrix
+        self._B = base_indexes
+        if self._A.size != 0:
+            self._indexes = set(range(1, A.shape[1]))
+        else:
+            self._indexes = set()
+        self._N = self._indexes.difference(self._B)
+
+    @property
+    def non_base_indexes(self):
+        self._N = self._indexes.difference(self._B)
+        return self._N
+
+    @non_base_indexes.setter
+    def non_base_indexes(self, _):
+        raise IndexError("Can't change non base indexes! You should touch only base indexes...")
+
+    @property
+    def base_matrix(self) -> np.ndarray:
+        return self._A[self._B]
+
+    @base_matrix.setter
+    def base_matrix(self, _):
+        raise IndexError("Can't change base matrix! You should touch only the total constraint matrix or indexes...")
+
+    @property
+    def constraint_matrix(self):
+        return self._A
+
+    @constraint_matrix.setter
+    def constraint_matrix(self, new_constraint_matrix: np.ndarray):
+        if new_constraint_matrix.size != 0:
+            self._A = new_constraint_matrix
+        else:
+            raise ValueError("Cannot update old matrix with an empty one!")
+
+    @property
+    def non_base_matrix(self):
+        return self._A[self._N]
+
+    @non_base_matrix.setter
+    def non_base_matrix(self, value):
+        raise IndexError(
+            "Can't change non base matrix! You should touch only the total constraint matrix or indexes...")
+
+    @property
+    def base_indexes(self) -> set:
+        return self._B
+
+    @base_indexes.setter
+    def base_indexes(self, new_base_indexes: set = None):
+        if new_base_indexes is None:
+            new_base_indexes = set()
+        else:
+            self._B = new_base_indexes
+
+
 def get_vertex(B: np.array, LP: LinearProgram) -> np.matrix:
     """
     Restituisci il vertice
 
     Questa funzione gli viene dato ingresso il problema di programmazione lineare e una lista di indici che saranno le
     colonne della matrice dei vincoli che vanno a creare la nuova base. Dalla teoria sappiamo che questa matrice è un
-    vertice del politopo che è la mia regione ammissibile.
+    vertice del politopo che è la mia regione ammissibile. Questo è il X_b che è il sottogruppo delle variabili di base
+    della soluzione.
 
     :param B: Lista delle colonne da estrarre e valutare
     :param LP: Problema comprensivo di matrice dei vincoli da cui estrarre il vertice
@@ -37,26 +123,39 @@ def get_vertex(B: np.array, LP: LinearProgram) -> np.matrix:
     return vertex
 
 
-def edge_transition(LP: LinearProgram, B: np.array, q: int):
+def row_pivot(LP: LinearProgram, B: np.array, q: int) -> tuple:
     """
-    Questa funzione implementa la transizione da un vertice al successivo per la di ottimizzazione. Nel metodo del
-    simplesso mi devo muovere da un vertice al successivo, qui uso l'euristica del MIN_RATIO.
+    Questa funzione implementa la transizione da un vertice al successivo per la fase di ottimizzazione. Nel metodo del
+    simplesso mi devo muovere da un vertice al successivo, qui uso l'euristica del MIN_RATIO. Questa operazione nei
+    libri classici è detta [APPL1]_ PIVOTING. Per ogni variabile NON di base j e per ogni colonna a_j della matrice dei
+    coefficienti NON di base associata a quel j, questa funzione calcola la colonna nello spazio ridotto (quello m+n-
+    dimensionale). Inoltre si calcola il [WHLR]_ :math:`x_q` e cioè quel valore che porta la variabile più vicina al suo vincolo
+    a sbatterci contro, cioè una delle variabili andrà a zero, è proprio quella indice q con valore associato x_q', in
+    uscita avrò proprio questo.
 
-    :param q: Indice della variable che uscirà di base
+    +-----------------------------------------------+
+    |                   Pivot row                   |
+    +===============================================+
+    | :math:`min[ b/a_ik | a_ik > 0]`               |
+    +-----------------------------------------------+
+    |cardine :math:`a_ik` divido le righe           |
+    |per questo valore.                             |
+    +-----------------------------------------------+
+
+    .. [APPL1] libro Applied Integer programming pag. 234-235 Algoritmo Revised Simplex
+    .. [WHLR] Wheeler, Algorithm for optimization sezione 11.2.3
+
+    :param LP: Problema da ottimizzare
+    :param B: Partizione degli indici per le variabili di base all'iterazione corrente
+    :return: Coppia (indice della variabile in uscita, valore che la azzera)
+    :param q: Indice della variable che entrerà in base
     """
     A = LP.A
     b = LP.b
     n = A.shape[1]
     B.sort()
     b_inds = B
-    B_set = set(B)
-    x_set = set(range(1, n + 1))
-    if len(x_set) >= len(B_set):
-        n_inds = sorted(x_set.difference(B_set))
-    else:
-        raise ValueError("Dimension mismatch in set difference")
     AB = A[:, b_inds]
-    # A[:, n_inds[q - 1]] questa è Av
     xB = np.linalg.solve(AB, b)
     Av = np.delete(A, b_inds, axis=1)
     d = np.linalg.solve(AB, Av)
@@ -73,21 +172,41 @@ def edge_transition(LP: LinearProgram, B: np.array, q: int):
 def get_lambda(Ab: np.array, c: np.array):
     """
     Funzione usata per il calcolo dei moltiplicatori di Lagrange lambda. Nel caso di problemi lineari so che i
-    moltiplicatori di Lagrange corrispondono alle variabili duali.
+    moltiplicatori di Lagrange corrispondono alle variabili duali. Queste variabili duali le uso per calcolarmi il
+    certificato duale a fine ottimizzazione. In pratica ciò che faccio è moltiplicare il vettore dei costi delle
+    variabili di base con la matrice dei vincoli delle variabili di base.
+
+    Calcolo delle variabili duali: :math:`c^T B^{-1} = u^T`
+
+    # TODO:FA CAGARE CHIAMARLA COSì VEDI IL MAIN...
+
+    >>> import numpy as np
+    >>> c = np.array([[3], [-1], [0], [0]])
+    >>> A = np.array([[1, 1, 1, 0], [-4, 2, 0, 1]])
+    >>> B = np.array([2, 3])
+    >>> get_lambda(A[:, B], c[B])
+    array([[0.],
+           [0.]])
 
     :param Ab: Matrice di base da usare
     :param c: Vettore dei costi del problema
     :return: Vettore dei moltiplicatori di Lagrange lambda
     """
+
     return np.linalg.solve(np.matrix.transpose(Ab), c)
 
 
 def get_mu_v(cv: np.array, Ab: np.array, Av: np.array, cb: np.array) -> np.array:
     """
     Funzione che restituisce il secondo vettore di moltiplicatori di Lagrange (quello associato ai vincoli di non
-    negatività). Questo vettore nella dimostrazione di Weeler viene scomposto fra costi delle varibili di base (che
-    viene posto a zero) e quelli NON di base (che sono oggetto diu questa funzione).
+    negatività). Questo vettore nella dimostrazione di [WHLR]_ viene scomposto fra costi delle variabili di base (che
+    viene posto a zero) e quelli NON di base (che sono oggetto diu questa funzione). In pratica nel libro [APPL1]_ si
+    tratta dei costi ridotti (cioè :math:`\mu_v  \in R^{m+n}` ). Questi costi li ispezionerò per controllare
+    l'ottimalità della soluzione corrente, se c'è anche sola una componente negativa, questa viola la duale
+    ammissibilità e quindi necessariamente non può essere soluzione ottima.
 
+    .. [WHLR] Wheeler, Algorithm for optimization sezione 11.2.2
+    .. [APPL1] libro Applied Integer programming pag. 234-235 Algoritmo Revised Simplex
     :param cv: Sotto-vettore dei costi delle variabili non di base
     :param Ab: Matrice di base
     :param Av: Matrice NON di base (colonne associate alle variabili non di base, nel tableau)
@@ -131,7 +250,7 @@ def step_LP(B: np.array, LP: LinearProgram):
     for i in range(0, mu_v.shape[0]):
         for j in range(0, mu_v.shape[1]):
             if mu_v[i][j] < 0:
-                pi, xi = edge_transition(LP, B, i)
+                pi, xi = row_pivot(LP, B, i)
                 if mu_v[i][j] * xi < delta:
                     q, p, xq, delta = i, pi, xi, mu_v[i][j] * xi
             if q == 0:
@@ -173,14 +292,18 @@ def solve_LP_no_first_base(B: np.array, LP: LinearProgram):
 
 
 if __name__ == '__main__':
-    m = Model(name='telephone_production')
-    z1 = m.continuous_var(name='z1')
-    z2 = m.continuous_var(name='z2')
-    x1 = m.continuous_var(name='x1')
-    x2 = m.continuous_var(name='x2')
-    x3 = m.continuous_var(name='x3')
-    m.add_constraint(2 * x1 - x2 + 2 * x3 + z1 == 1)
-    m.add_constraint(5 * x1 + x2 - 3 * x3 - z2 == -2)
-    m.minimize(z1 + z2)
-    s = m.solve()
-    m.print_solution()
+    """ Qui testo l'algoritmo dall'inzio alla fine..."""
+    A = np.array([[1, 1, 1, 0], [-4, 2, 0, 1]])
+    b = np.array([[9], [2]])
+    x = np.empty([4, 1])
+    c = np.array([[3], [-1], [0], [0]])
+    LP = LinearProgram(A, b, c)
+    B = np.array([2, 3])
+    print("First vertex: ")
+    print(get_vertex(B, LP))
+    print("Lambda: ")
+    print(get_lambda(LP.A[:, B], c[B]))
+    print("Reduced costs: ")
+    mu_s = get_mu_v(np.delete(c, B), LP.A[:, B], np.delete(A, B, axis=1), c[B])
+    print(np.unique(mu_s, axis=0))
+    B, done = step_LP(B, LP)

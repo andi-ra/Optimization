@@ -1,9 +1,10 @@
+import unittest
 from unittest import TestCase
 
 import numpy as np
 from numpy.linalg import LinAlgError
 
-from simplex import LinearProgram, get_vertex, edge_transition, get_lambda, get_mu_v, step_LP, minimize_lp
+from simplex import LinearProgram, get_vertex, row_pivot, get_lambda, get_mu_v, step_LP, minimize_lp
 
 """
 Questi test si basano sull'esempio 11.7 a pagina 203, prima di cambiare valori è meglio vedere bene che matrici ho e 
@@ -39,14 +40,14 @@ class Test(TestCase):
         B = np.array([2, 3])
         mu_v = np.array([3, -1])
         q = 1
-        p, xq = edge_transition(self.LP, B, q)
+        p, xq = row_pivot(self.LP, B, q)
         self.assertEqual(1, xq)
 
     def test_edge_transition_correct_exit_column_pivoting(self):
         B = np.array([2, 3])
         mu_v = np.array([3, -1])
         q = 1
-        p, xq = edge_transition(self.LP, B, q)
+        p, xq = row_pivot(self.LP, B, q)
         self.assertEqual(1, p)
 
     def test_get_lambda_using_example_11_7(self):
@@ -79,3 +80,19 @@ class Test(TestCase):
         LP = LinearProgram(A, b, c)
         B = np.array([0, 1, 2])
         self.assertRaises(ValueError, minimize_lp, B, LP)
+
+    @unittest.skip("Not implemented yet")
+    def test_non_base_indexes(self):
+        self.fail()
+
+    @unittest.skip("Not implemented yet")
+    def test_base_matrix(self):
+        self.fail()
+
+    @unittest.skip("Not implemented yet")
+    def test_non_base_matrix(self):
+        self.fail()
+
+    @unittest.skip("Not implemented yet")
+    def test_base_indexes(self):
+        self.fail()
