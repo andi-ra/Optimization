@@ -157,15 +157,14 @@ def row_pivot(LP: LinearProgram, B: np.array, q: int) -> tuple:
     b_inds = B
     AB = A[:, b_inds]
     xB = np.linalg.solve(AB, b)
-    Av = np.delete(A, b_inds, axis=1)
-    d = np.linalg.solve(AB, Av)
+    Aq = A[:, q]
+    d = np.linalg.solve(AB, Aq)
     p, xq = 0, np.inf
     for i in range(0, d.shape[0]):
-        for j in range(0, d.shape[1]):
-            if d[i][j] > 0:
-                v = xB[i] / d[i][j]
-                if v < xq:
-                    p, xq = i, v
+        if d[i] > 0:
+            v = xB[i] / d[i]
+            if v < xq:
+                p, xq = i, v
     return p, xq
 
 
@@ -221,6 +220,7 @@ def get_mu_v(cv: np.array, Ab: np.array, Av: np.array, cb: np.array) -> np.array
 
 def step_LP(B: np.array, LP: LinearProgram):
     """
+    # TODO: sudiividere il metodo, troppo complesso così. Metti almeno un __init__ forse è il caso mettere una CLASS
     Questa funzione restituisce la nuova matrice di base nella iterazione della fase di ottimizzazione. NON restituisco:
         * Il nuovo vertice
         * Vettore dei moltiplicatori associati alla matrice A dei vincoli (lambda)
@@ -243,23 +243,20 @@ def step_LP(B: np.array, LP: LinearProgram):
     Av = np.delete(A, b_inds, axis=1)
     xB = np.linalg.solve(AB, b)
     cB = c[b_inds]
-    lambda_mul = np.linalg.solve(AB, cB)
+    lambda_mul = np.linalg.solve(np.transpose(AB), cB)
     cV = np.delete(c, b_inds)
-    mu_v = cV - np.dot(np.transpose(Av), lambda_mul)
+    reduced_cost = np.dot(np.invert(AB), Av)
+    mu_v = cV - np.dot(np.transpose(reduced_cost), lambda_mul)
+    mu_v = np.unique(-mu_v)
+
+
+def column_pivot(mu_v=None, Ab=np.ndarray):
     q, p, xq, delta = 0, 0, np.inf, np.inf
-    for i in range(0, mu_v.shape[0]):
-        for j in range(0, mu_v.shape[1]):
-            if mu_v[i][j] < 0:
-                pi, xi = row_pivot(LP, B, i)
-                if mu_v[i][j] * xi < delta:
-                    q, p, xq, delta = i, pi, xi, mu_v[i][j] * xi
-            if q == 0:
-                return (B, True)
-    if np.isinf(xq):
-        raise ValueError("Unbounded problem")
-    j = next(index for index in B if b_inds[p] == B[index])
-    B[j] = n_inds[q]  # swap indices
-    return (B, False)  # new vertex but not optimal
+    candidate_pivots = np.array([elem for elem in mu_v if elem < 0])
+    column_index = np.where(candidate_pivots == np.amin(candidate_pivots))
+    reduced_space_column = np.linalg.solve(Ab, A[column_index])
+    reduced_cost = np.dot(c_b)
+    return column_index
 
 
 def minimize_lp(B, LP):
@@ -293,12 +290,12 @@ def solve_LP_no_first_base(B: np.array, LP: LinearProgram):
 
 if __name__ == '__main__':
     """ Qui testo l'algoritmo dall'inzio alla fine..."""
-    A = np.array([[1, 1, 1, 0], [-4, 2, 0, 1]])
-    b = np.array([[9], [2]])
-    x = np.empty([4, 1])
-    c = np.array([[3], [-1], [0], [0]])
+    A = np.array([[1, 2, 3, 1, -3, 1, 0, 0], [2, -1, 2, 2, 1, 0, 1, 0], [-3, 2, 1, -1, 2, 0, 0, 1]])
+    b = np.array([[9], [10], [11]])
+    x = np.empty([8, 1])
+    c = np.array([[4], [3], [1], [7], [6], [0], [0], [0]])
     LP = LinearProgram(A, b, c)
-    B = np.array([2, 3])
+    B = np.array([5, 6, 7])
     print("First vertex: ")
     print(get_vertex(B, LP))
     print("Lambda: ")
