@@ -1,105 +1,72 @@
 import unittest
 from unittest import TestCase
-
 import numpy as np
-from numpy.linalg import LinAlgError
-
-from simplex import LinearProgram, get_vertex, row_pivot, get_lambda, get_mu_v, step_LP, minimize_lp, column_pivot
-
-"""
-Questi test si basano sull'esempio 11.7 a pagina 203, prima di cambiare valori è meglio vedere bene che matrici ho e 
-assicurarsi che siano giuste e ritestare con altre matrici.   
-"""
+from simplex import ConstraintMatrix, LinearProgram, CostVector
 
 
-class Test(TestCase):
+class TestConstraintMatrix(TestCase):
     def setUp(self) -> None:
-        A = np.array([[1, 1, 1, 0], [-4, 2, 0, 1]])
-        b = np.array([[9], [2]])
-        x = np.empty([4, 1])
-        c = np.array([[3], [-1], [0], [0]])
-        self.LP = LinearProgram(A, b, c)
+        # INIZIALIZZAZIONE E RISULTATI DEL PROBLEMA DI TEST
+        self.A = np.array([[1, 2, 3, 1, -3, 1, 0, 0], [2, -1, 2, 2, 1, 0, 1, 0], [-3, 2, 1, -1, 2, 0, 0, 1]])
+        self.B = np.array([5, 6, 7])
+        self.b = np.array([[9], [10], [11]])
+        self.c = CostVector(np.array([[4], [3], [1], [7], [6], [0], [0], [0]]), self.B)
+        self.constraint_matrix = ConstraintMatrix(self.A, self.B)
+        self.N = np.array([[1, 2, 3, 1, -3], [2, -1, 2, 2, 1], [-3, 2, 1, -1, 2]])
+        self.LP = LinearProgram(self.constraint_matrix, self.b, self.c)
+        self.non_base_cost = np.array([[4], [3], [1], [7], [6]])
+        self.non_base_cost_index = np.array([0, 1, 2, 3, 4])
+        self.reduced_non_base_costs = np.array([-4, -3, -1, -7, -6])
+        self.entering_column_index = 3  # cioè x4
+        self.entering_column = np.array([[1], [2], [-1]])  # cioè x4
+        self.exiting_column_index_non_base_space = 1  # cioè s2, la seconda colonna nella matrice di base
+        self.leaving_variable_reduced_cost = -7  # cioè il c4 ridotto, quello che va nell'obiettivo al pivoting
+        self.leaving_column = np.array([0, 1, 0])  # Questa è la colonna associata ad s2 nella base matrix
+        self.pivot_element = np.array([2])
 
-    def test_get_vertex(self):
-        vertex = get_vertex(np.array([2, 3]), LP=self.LP)
-        np.testing.assert_array_almost_equal(vertex, np.array([[9], [2]]))
+    def test_non_base_indexes_return_correct_matrix(self):
+        np.testing.assert_array_almost_equal(self.N, self.constraint_matrix.non_base_matrix)
 
-    def test_get_vertex_with_ordering_important(self):
-        vertex = get_vertex(np.array([3, 2]), LP=self.LP)
-        np.testing.assert_array_almost_equal(vertex, np.array([[9], [2]]))
+    def test_raise_runtime_error_for_create_empty_constr_matrix(self):
+        self.assertRaises(RuntimeError, ConstraintMatrix, np.empty([0, 0]), np.empty([0, 0]))
 
-    def test_get_vertex_raises_error_when_singular(self):
-        A = np.array([[1, 1, 1, 0], [2, 2, 0, 1]])
-        b = np.array([[9], [2]])
-        x = np.empty([4, 1])
-        c = np.array([[3], [-1], [0], [0]])
-        LP = LinearProgram(A, b, c)
-        self.assertRaises(LinAlgError, get_vertex, np.array([0, 1]), LP=LP)
+    def test_raise_runtime_error_for_create_empty_base_partition(self):
+        self.assertRaises(RuntimeError, ConstraintMatrix, np.empty([0, 0]), np.empty([0, 0]))
 
-    def test_edge_transition_correct_xq_value(self):
-        B = np.array([2, 3])
-        mu_v = np.array([3, -1])
-        q = 1
-        p, xq = row_pivot(self.LP, B, q)
-        self.assertEqual(1, xq)
+    def test_objective_value(self):
+        np.testing.assert_array_almost_equal(0, self.LP.objective_value)
 
-    def test_edge_transition_correct_exit_column_pivoting(self):
-        B = np.array([2, 3])
-        mu_v = np.array([3, -1])
-        q = 1
-        p, xq = row_pivot(self.LP, B, q)
-        self.assertEqual(1, p)
+    def test_get_dual_variable_in_single_step(self):
+        np.testing.assert_array_almost_equal(self.LP.dual_variable, np.zeros(self.b.shape))
 
-    def test_get_lambda_using_example_11_7(self):
-        lambda_vect = get_lambda(np.array([[1, 0], [0, 1]]), np.array([[0], [0]]))
-        np.testing.assert_array_almost_equal(lambda_vect, np.array([[0], [0]]))
+    def test_exit_column_index(self):
+        # Attenzione la colonna 4 del libro è la 3 di python!!
+        self.assertEqual(3, self.LP.entering_column_index)
 
-    def test_get_mu_v(self):
-        cv = np.array([[3], [-1]])
-        Ab = np.array([[1, 0], [0, 1]])
-        Av = np.array([[1, 1], [-4, 2]])
-        cb = np.array([[0], [0]])
-        multiplier_non_neg = get_mu_v(cv, Ab, Av, cb)
-        np.testing.assert_array_almost_equal(multiplier_non_neg, np.array([[3], [-1]]))
+    def test_reduced_non_base_cost(self):
+        # Questo testa il vettore dei costi ridotti delle variabili non in base
+        np.testing.assert_array_almost_equal(self.LP.reduced_non_base_cost, self.reduced_non_base_costs)
 
-    @unittest.skip("Bug here")
-    def test_step_lp_correct_value_of_base(self):
-        B = np.array([2, 3])
-        new_base = step_LP(B, self.LP)
-        np.testing.assert_array_almost_equal(new_base[0].reshape(2, 1), np.array([[2], [3]]))
+    def test_non_base_cost(self):
+        np.testing.assert_array_almost_equal(self.LP.cost_vector.non_base_cost, self.non_base_cost)
 
-    @unittest.skip("Bug here")
-    def test_step_lp_correct_value_of_feasibleness(self):
-        B = np.array([2, 3])
-        new_base = step_LP(B, self.LP)
-        self.assertTrue(new_base[1])
+    def test_non_base_index(self):
+        np.testing.assert_array_almost_equal(self.LP.cost_vector.non_base_index, self.non_base_cost_index)
 
-    @unittest.skip("Changing it...")
-    def test_unbounded_minimise_problem(self):
-        A = np.array([[1, 1, 1, 1], [0, -1, 2, 3], [2, 1, 2, -1]])
-        b = np.array([[2], [-1], [3]])
-        x = np.empty([4, 1])
-        c = np.array([[6], [3], [0]])
-        LP = LinearProgram(A, b, c)
-        B = np.array([0, 1, 2])
-        self.assertRaises(ValueError, minimize_lp, B, LP)
+    def test_entering_column_index(self):
+        self.assertEqual(self.entering_column_index, self.LP.entering_column_index)
 
-    @unittest.skip("Not implemented yet")
-    def test_non_base_indexes(self):
-        self.fail()
+    def test_entering_column(self):
+        np.testing.assert_array_almost_equal(self.entering_column, self.LP.entering_column)
 
-    @unittest.skip("Not implemented yet")
-    def test_base_matrix(self):
-        self.fail()
+    def test_leaving_column_index(self):
+        self.assertEqual(self.exiting_column_index_non_base_space, self.LP.exit_variable_index)
 
-    @unittest.skip("Not implemented yet")
-    def test_non_base_matrix(self):
-        self.fail()
+    def test_exit_variable_reduced_cost(self):
+        self.assertEqual(self.leaving_variable_reduced_cost, self.LP.entering_variable_reduced_cost)
 
-    @unittest.skip("Not implemented yet")
-    def test_base_indexes(self):
-        self.fail()
+    def test_exit_variable_column(self):
+        np.testing.assert_array_almost_equal(self.leaving_column, self.LP.exit_variable_column)
 
-    def test_column_pivot(self):
-        index = column_pivot(np.array([-4, -3, -1, -7, -6]))
-        np.testing.assert_array_almost_equal(3, index)
+    def test_pivot_element(self):
+        np.testing.assert_array_almost_equal(self.pivot_element, self.LP.pivot_element)
