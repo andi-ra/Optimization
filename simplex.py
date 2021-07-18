@@ -24,7 +24,6 @@ class CostVector:
         else:
             self._indexes = np.empty([0])
         self._non_base_index = np.delete(self._indexes, self._base_indexes)
-        self.mu_v = np.empty([0])
 
     @property
     def base_cost(self):
@@ -34,9 +33,34 @@ class CostVector:
     def non_base_cost(self):
         return self._c[self._non_base_index]
 
+    @non_base_cost.setter
+    def non_base_cost(self, value: np.ndarray):
+        # TODO: controllare che tutto torni e ritornare eccezioni corrette
+        self._c[self._non_base_index] = value
+
     @property
-    def non_base_index(self):
+    def non_base_indexes(self):
         return self._non_base_index
+
+    @non_base_indexes.setter
+    def non_base_indexes(self, value: np.ndarray):
+        self._non_base_index = value
+
+    @property
+    def base_indexes(self):
+        return self._base_indexes
+
+    @base_indexes.setter
+    def base_indexes(self, value: np.ndarray):
+        self._base_indexes = value
+
+    @property
+    def total_cost_vector(self):
+        return self._c
+
+    @total_cost_vector.setter
+    def total_cost_vector(self, value):
+        self._c = value
 
 
 class ConstraintMatrix:
@@ -112,24 +136,51 @@ class ConstraintMatrix:
 
 
 class LinearProgram:
-    """Classe che rappresenta il problema lineare da ottimizzare"""
+    """Classe che rappresenta il problema lineare da ottimizzare
+
+    Per quanto riguarda i vettori dei costi, ce ne sono due: normali e ridotti. Questi vengono immagazzinati allo stesso
+    modo, ma l'handling della struttura dati e l'aggiornamento dei costi ridotti è implementato qui.
+    Attenzione all'handling in quanto gli indici di base non sono qui ma nella constraint matrix.
+    """
 
     def __init__(self, constr_matrix: ConstraintMatrix, b: np.ndarray, c: CostVector) -> None:
+        self._previous_pivot = 0
         self.constraint_matrix = constr_matrix
-        self.known_terms = b
+        self._known_terms = b
         self.cost_vector = c
-        # self.optimalValue = None
-        # self.feasible = True
-        # self.bounded = False
-        # # self.mu_v = np.empty([0, 0])
+        self._reduced_cost_vector = CostVector(-c.total_cost_vector, c.base_indexes)
+
+    @property
+    def reduced_cost_base(self):
+        return self._reduced_cost_vector.base_cost
+
+    @reduced_cost_base.setter
+    def reduced_cost_base(self, value: np.ndarray):
+        self._reduced_cost_vector.non_base_cost = value
+
+    @property
+    def reduced_cost_non_base(self):
+        return self._reduced_cost_vector.non_base_cost
+
+    @reduced_cost_non_base.setter
+    def reduced_cost_non_base(self, value: np.ndarray):
+        self._reduced_cost_vector.non_base_cost = value
+
+    @property
+    def reduced_cost_total_vector(self):
+        return self._reduced_cost_vector.total_cost_vector
+
+    @reduced_cost_total_vector.setter
+    def reduced_cost_total_vector(self, value: np.ndarray):
+        self._reduced_cost_vector.total_cost_vector = value
 
     @property
     def solution_vertex(self):
-        return np.linalg.solve(self.constraint_matrix.base_matrix, self.known_terms)
+        return np.linalg.solve(self.constraint_matrix.base_matrix, self._known_terms)
 
     @property
     def objective_value(self):
-        return self.dual_variable * self.known_terms
+        return self.reduced_cost_base * np.linalg.inv(self.constraint_matrix.base_matrix) * self._known_terms
 
     @property
     def dual_variable(self) -> np.ndarray:
@@ -146,48 +197,32 @@ class LinearProgram:
 
     @property
     def entering_column_index(self) -> int:
-        exit_column_index = np.where(self.reduced_non_base_cost == np.amin(self.reduced_non_base_cost))
-        return int(np.unique(np.asarray(exit_column_index[0])))
+        entering_column_index = np.asarray(
+            np.where(self.reduced_cost_non_base.T == np.amin(self.reduced_cost_non_base.T)))
+        if entering_column_index.shape[0] == 2:
+            return int(np.unique(np.asarray(entering_column_index[1])))
+        elif entering_column_index.shape[0] == 1:
+            return int(np.unique(np.asarray(entering_column_index[0])))
+        else:
+            raise IndexError("Number of dimensions in vector not recognized")
 
     @property
     def entering_column(self) -> np.ndarray:
         return np.reshape(np.linalg.solve(self.constraint_matrix.base_matrix,
                                           self.constraint_matrix.constraint_matrix[:, self.entering_column_index]),
-                          self.known_terms.shape)
+                          self._known_terms.shape)
 
     @property
     def entering_variable_reduced_cost(self):
-        return self.reduced_non_base_cost[self.entering_column_index]
+        return self.reduced_cost_non_base[self.entering_column_index]
 
     @property
-    def reduced_non_base_cost(self):
-        """
-        Funzione che restituisce il secondo vettore di moltiplicatori di Lagrange (quello associato ai vincoli di non
-        negatività). Questo vettore nella dimostrazione di [WHLR]_ viene scomposto fra costi delle variabili di base
-        (che viene posto reduced_non_base_cost zero) e quelli NON di base (che sono oggetto diu questa funzione). In
-        pratica nel libro [APPL1]_ si tratta dei costi ridotti (cioè :math:`\mu_v  \in \mathbb{R}^{m+n}` ). Questi
-        costi li ispezionerò per controllare l'ottimalità della soluzione corrente, se c'è anche sola una componente
-        negativa, questa viola la duale ammissibilità e quindi necessariamente non può essere soluzione ottima.
-
-        .. [WHLR] Wheeler, Algorithm for optimization sezione 11.2.2 .. [APPL1] libro Applied Integer programming
-        pag. 234-235 Algoritmo Revised Simplex :param Ab: Matrice di base :param non_base_constraint_matrix: Matrice
-        NON di base (colonne associate alle variabili non di base, nel tableau) :return: Vettore associato al
-        variabili NON di base dei moltiplicatori associato reduced_non_base_cost vincoli di non negatività
-
-        .. warning::
-            DEVI AGGIUSTARE LE DIMENSIONI... PER ORA FUNZIONA MA NON È DETTO CHE IN FUTURO CONTINUI
-
-            ValueError: shapes (3,1) and (3,5) not aligned: 1 (dim 1) != 3 (dim 0)
-        """
-        reduced_non_base_cost = np.dot(np.transpose(self.dual_variable), self.constraint_matrix.non_base_matrix) - \
-                                self.cost_vector.non_base_cost[self.cost_vector.non_base_index]
-        return reduced_non_base_cost[:, 0]
+    def current_pivot_element(self):
+        return self.constraint_matrix.constraint_matrix[self.exit_variable_index, self.entering_column_index]
 
     @property
-    def pivot_element(self):
-        column_pivot = self.entering_column_index
-        row_pivot = self.exit_variable_index
-        return self.constraint_matrix.constraint_matrix[row_pivot, column_pivot]
+    def previous_pivot_element(self):
+        return self._previous_pivot
 
     @property
     def exit_variable_index(self) -> int:
@@ -219,36 +254,79 @@ class LinearProgram:
         d = self.entering_column
         for index in range(0, len(d)):
             if d[index] > 0:
-                ratio.append({'ratio_value': float(self.known_terms[index] / d[index]), 'ratio_index': index})
+                ratio.append({'ratio_value': float(self._known_terms[index] / d[index]), 'ratio_index': index})
         ratios = [x['ratio_value'] for x in ratio]
         min_ratio = min(ratios)
         exit_variable_index = [x['ratio_index'] for x in ratio if x['ratio_value'] == min_ratio]
         return int(exit_variable_index[0])
 
     @property
-    def exit_variable_column(self):
+    def exit_variable_row(self):
         return self.constraint_matrix.base_matrix[self.exit_variable_index]
 
-    # def update_revised_simplex_tableau(self):
-    #     pass
+    def update_revised_simplex_constraint_matrix(self):
+        """Questo metodo aggiorna tutto il tableau, in pratica ogni riga va aggiornata secondo le istruzioni del
+        libro """
+        self.constraint_matrix.constraint_matrix = self.constraint_matrix.constraint_matrix.astype('float')
+        self._previous_pivot = self.current_pivot_element
+        self.constraint_matrix.constraint_matrix[self.exit_variable_index, :] /= self.current_pivot_element
+        multiplier = [idx for idx in range(0, len(self.entering_column)) if idx != self.exit_variable_index]
+        for idx in multiplier:
+            self.constraint_matrix.constraint_matrix[idx, :] = self.constraint_matrix.constraint_matrix[idx, :] - \
+                                                               self.constraint_matrix.constraint_matrix[
+                                                                   idx, self.entering_column_index] * \
+                                                               self.constraint_matrix.constraint_matrix[
+                                                               self.exit_variable_index,
+                                                               :]
 
-# def solve_LP_no_first_base(B: np.array, LP: LinearProgram):
-#     A = LP.constraint_matrix
-#     b = LP.known_terms
-#     c = LP.cost_vector
-#     m, n = A.shape
-#     z = np.ones(m)
-#     lista = [+1 if b[j] >= 0 else -1 for j in b if b[j] >= 0]
-#     a = np.array(lista)
-#     Z = np.diag(a)
-#     A_concat = np.concatenate(A, Z, 1)
-#     b_new = b
-#     c_new = np.concatenate(np.zeros(n), z, 0)
-#     LP_init = LinearProgram(A_concat, b_new, c_new)
-#     B = np.arange(start=1, stop=m + 1, step=1) + n
-#
-#     for i in B:
-#         if B[i] > n:
-#             raise ValueError("Infeasible")
-#
-#     solve_LP_no_first_base(B, LP_init)
+    def update_revised_simplex_known_terms(self):
+        """
+        Questo è da farsi allo stesso modo del pivoting. Questo lo devo aggiornare con la procedura di pivoting.
+        :math:`b_i = b_i+\\frac{b_r}{a_{rk}}*c_{k}` cioè gli devo aggiungere :math:`c_k` volte la nuova r-esima riga,
+        cioè quella uscente.
+
+        """
+        self._known_terms = self._known_terms.astype('float')
+        self._known_terms = np.dot(self.constraint_matrix.base_matrix, self._known_terms)
+
+    def update_revised_simplex_cost_vector(self):
+        """
+        Questo mi tocca gestirlo in 2 tempi:
+            * Prima scambio i costi ridotti della variabile di base associata alla leaving row index :math:`X_{Br}`
+            * Poi aggiungo reduced :math:`c_k` volte la r-esima riga aggiornata
+        :return:
+        """
+        # TODO: TROVARE UN MODO MIGLIORE DI FARE QUESTO
+        self.cost_vector._c = self.cost_vector._c.astype('float')
+        self._reduced_cost_vector._c = self._reduced_cost_vector._c.astype('float')
+        self.reduced_cost_total_vector = self.reduced_cost_total_vector.reshape(
+            self.constraint_matrix.constraint_matrix.shape[1]) - \
+                                         self.reduced_cost_non_base[
+                                             self.entering_column_index] * self.constraint_matrix.constraint_matrix[
+                                                                           self.exit_variable_index, :]
+
+    def __str__(self):
+        from prettytable import PrettyTable
+        x = PrettyTable()
+        x.field_names = ["Base variables", "Reduced NON base variables", "RHS solution"]
+        x.add_row([self.reduced_cost_base.T, self.reduced_cost_non_base.T, np.unique(self.objective_value.T)])
+        x.add_row(["---------------------", "---------------------", "---------------------"])
+        x.add_row([self.constraint_matrix.base_matrix, self.constraint_matrix.non_base_matrix, self._known_terms])
+        return x.__str__()
+
+    def __next__(self):
+        self.update_revised_simplex_constraint_matrix()
+        self.update_revised_simplex_known_terms()
+        self.update_revised_simplex_cost_vector()
+        print(self)
+
+
+if __name__ == '__main__':
+    A = np.array([[1, 2, 3, 1, -3, 1, 0, 0], [2, -1, 2, 2, 1, 0, 1, 0], [-3, 2, 1, -1, 2, 0, 0, 1]])
+    B = np.array([5, 6, 7])
+    b = np.array([[9], [10], [11]])
+    c = CostVector(np.array([[4], [3], [1], [7], [6], [0], [0], [0]]), B)
+    constraint_matrix = ConstraintMatrix(A, B)
+    N = np.array([[1, 2, 3, 1, -3], [2, -1, 2, 2, 1], [-3, 2, 1, -1, 2]])
+    LP = LinearProgram(constraint_matrix, b, c)
+    next(LP)
