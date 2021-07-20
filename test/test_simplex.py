@@ -24,7 +24,7 @@ class TestConstraintMatrix(TestCase):
         self.entering_column = np.array([[1], [2], [-1]])  # cioè x4
         self.exiting_column_index_non_base_space = 1  # cioè s2, la seconda colonna nella matrice di base
         self.leaving_variable_reduced_cost = -7  # cioè il c4 ridotto, quello che va nell'obiettivo al pivoting
-        self.leaving_column = np.array([0, 1, 0])  # Questa è la colonna associata ad s2 nella base matrix
+        self.exit_variable_row = np.array([2, -1,  2,  2,  1,  0,  1,  0])  # Questa è la colonna associata ad s2 nella base matrix
         self.pivot_element = np.array([2])
         self.pivot_element_after_one_iter = np.array([1])
         self.previous_pivot_element = np.array([2])
@@ -78,7 +78,7 @@ class TestConstraintMatrix(TestCase):
         self.assertEqual(self.leaving_variable_reduced_cost, self.LP.entering_variable_reduced_cost)
 
     def test_exit_variable_column(self):
-        np.testing.assert_array_almost_equal(self.leaving_column, self.LP.exit_variable_row)
+        np.testing.assert_array_almost_equal(self.exit_variable_row, self.LP.exit_variable_row)
 
     def test_pivot_element(self):
         np.testing.assert_array_almost_equal(self.pivot_element, self.LP.current_pivot_element)

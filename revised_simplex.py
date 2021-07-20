@@ -1,7 +1,3 @@
-# I PROBLEMI DEVONO ESSERE IN FORMA UGUAGLIANZA
-import logging
-from copy import deepcopy
-
 import numpy as np
 
 
@@ -136,7 +132,6 @@ class ConstraintMatrix:
         else:
             self._B = new_base_indexes
 
-
 class LinearProgram:
     """Classe che rappresenta il problema lineare da ottimizzare
 
@@ -151,8 +146,7 @@ class LinearProgram:
         self._known_terms = b
         self.cost_vector = c
         self._reduced_cost_vector = CostVector(-c.total_cost_vector, c.base_indexes)
-        self.previous_tableau = deepcopy(self)
-        self.previous_tableau._previous_pivot = 0
+
 
     @property
     def reduced_cost_base(self):
@@ -315,6 +309,3 @@ if __name__ == '__main__':
     constraint_matrix = ConstraintMatrix(A, B)
     N = np.array([[1, 2, 3, 1, -3], [2, -1, 2, 2, 1], [-3, 2, 1, -1, 2]])
     LP = LinearProgram(constraint_matrix, b, c)
-    next(LP)
-    print(LP)
-    next(LP)
