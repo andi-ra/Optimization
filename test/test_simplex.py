@@ -1,7 +1,10 @@
+import logging
 import unittest
 from unittest import TestCase
 import numpy as np
 from simplex import ConstraintMatrix, LinearProgram, CostVector
+
+logging.basicConfig(level=logging.WARNING)
 
 
 class TestConstraintMatrix(TestCase):
@@ -30,6 +33,7 @@ class TestConstraintMatrix(TestCase):
         self.b_first_iteration = np.array([[4], [5], [16]])
         self.b_second_iteration = np.array([[1.6], [5.8], [13.6]])
         self.second_iteration_reduced_costs = np.array([3, -6.5, 6, 0, -2.5, 0, 3.5, 0])
+        self.second_iteration_entering_column = np.array([[2.5], [-0.5], [1.5]])
 
     def test_non_base_indexes_return_correct_matrix(self):
         np.testing.assert_array_almost_equal(self.N, self.constraint_matrix.non_base_matrix)
@@ -80,45 +84,22 @@ class TestConstraintMatrix(TestCase):
         np.testing.assert_array_almost_equal(self.pivot_element, self.LP.current_pivot_element)
 
     def test_update_base_matrix(self):
-        self.LP.update_revised_simplex_constraint_matrix()
+        self.LP.update_revised_simplex_matrix_entire_rows()
         np.testing.assert_array_almost_equal(self.first_iteration_base_matrix,
                                              self.LP.constraint_matrix.base_matrix)
 
     def test_update_base_matrix_two_iterations(self):
-        self.LP.update_revised_simplex_constraint_matrix()
-        self.LP.update_revised_simplex_known_terms()
-        self.LP.update_revised_simplex_cost_vector()
-        self.LP.update_revised_simplex_constraint_matrix()
-        self.LP.update_revised_simplex_known_terms()
-        self.LP.update_revised_simplex_cost_vector()
+        next(self.LP)
+        next(self.LP)
         np.testing.assert_array_almost_equal(self.second_iteration_base_matrix, self.LP.constraint_matrix.base_matrix)
 
-    def test_update_revised_simplex_known_terms(self):
-        self.LP.update_revised_simplex_constraint_matrix()
-        self.LP.update_revised_simplex_known_terms()
-        np.testing.assert_array_almost_equal(self.b_first_iteration, self.LP._known_terms)
-
     def test_update_revised_simplex_known_terms_second_iteration(self):
-        self.LP.update_revised_simplex_constraint_matrix()
-        self.LP.update_revised_simplex_known_terms()
-        self.LP.update_revised_simplex_cost_vector()
-        self.LP.update_revised_simplex_constraint_matrix()
-        self.LP.update_revised_simplex_known_terms()
-        self.LP.update_revised_simplex_cost_vector()
+        next(self.LP)
+        next(self.LP)
         np.testing.assert_array_almost_equal(self.b_second_iteration, self.LP._known_terms)
 
     def test_update_revised_simplex_reduced_costs(self):
-        self.LP.update_revised_simplex_constraint_matrix()
-        self.LP.update_revised_simplex_known_terms()
-        self.LP.update_revised_simplex_cost_vector()
+        next(self.LP)
         np.testing.assert_array_almost_equal(
             self.second_iteration_reduced_costs.reshape(self.LP.reduced_cost_total_vector.shape),
             self.LP.reduced_cost_total_vector)
-
-    def test_current_pivot_element_after_one_iteration(self):
-        self.LP.update_revised_simplex_constraint_matrix()
-        np.testing.assert_array_almost_equal(self.pivot_element_after_one_iter, self.LP.current_pivot_element)
-
-    def test_previous_pivot_element_after_one_iteration(self):
-        self.LP.update_revised_simplex_constraint_matrix()
-        np.testing.assert_array_almost_equal(self.previous_pivot_element, self.LP.previous_pivot_element)
