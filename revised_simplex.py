@@ -309,3 +309,6 @@ if __name__ == '__main__':
     constraint_matrix = ConstraintMatrix(A, B)
     N = np.array([[1, 2, 3, 1, -3], [2, -1, 2, 2, 1], [-3, 2, 1, -1, 2]])
     LP = LinearProgram(constraint_matrix, b, c)
+    print(LP)
+    next(LP)
+    print(LP)
