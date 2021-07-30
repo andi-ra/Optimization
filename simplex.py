@@ -1,6 +1,4 @@
 # I PROBLEMI DEVONO ESSERE IN FORMA UGUAGLIANZA
-import logging
-from copy import deepcopy
 
 import numpy as np
 
@@ -151,8 +149,6 @@ class LinearProgram:
         self._known_terms = b
         self.cost_vector = c
         self._reduced_cost_vector = CostVector(-c.total_cost_vector, c.base_indexes)
-        self.previous_tableau = deepcopy(self)
-        self.previous_tableau._previous_pivot = 0
 
     @property
     def reduced_cost_base(self):
@@ -225,7 +221,7 @@ class LinearProgram:
 
     @property
     def previous_pivot_element(self):
-        return self.previous_tableau._previous_pivot
+        return self._previous_pivot
 
     @property
     def exit_variable_index(self) -> int:
@@ -267,31 +263,46 @@ class LinearProgram:
     def exit_variable_row(self):
         return self.constraint_matrix.constraint_matrix[self.exit_variable_index]
 
-    def update_revised_simplex_matrix_entire_rows(self):
+    def update_revised_simplex_constraint_matrix(self):
         """Questo metodo aggiorna tutto il tableau, in pratica ogni riga va aggiornata secondo le istruzioni del
         libro """
         self.constraint_matrix.constraint_matrix = self.constraint_matrix.constraint_matrix.astype('float')
-        self._known_terms = self._known_terms.astype('float')
-        self.cost_vector._c = self.cost_vector._c.astype('float')
-        self._reduced_cost_vector._c = self._reduced_cost_vector._c.astype('float')
-
-        critical_column = self.constraint_matrix.non_base_matrix[:, self.entering_column_index]
-        current_pivot = self.constraint_matrix.constraint_matrix[self.exit_variable_index, self.entering_column_index]
-        self.constraint_matrix.constraint_matrix[self.exit_variable_index, :] /= current_pivot
-        self._known_terms[self.exit_variable_index] /= current_pivot
-        critical_reduced_cost = self.reduced_cost_non_base[self.entering_column_index]
+        self._previous_pivot = self.current_pivot_element
+        self.constraint_matrix.constraint_matrix[self.exit_variable_index, :] /= self.current_pivot_element
         multiplier = [idx for idx in range(0, len(self.entering_column)) if idx != self.exit_variable_index]
         for idx in multiplier:
             self.constraint_matrix.constraint_matrix[idx, :] = self.constraint_matrix.constraint_matrix[idx, :] - \
-                                                               critical_column[
-                                                                   idx] * self.constraint_matrix.constraint_matrix[
-                                                                          self.exit_variable_index, :]
-            self._known_terms[idx] = self._known_terms[idx] - critical_column[idx] * self._known_terms[
-                self.exit_variable_index]
+                                                               self.constraint_matrix.constraint_matrix[
+                                                                   idx, self.entering_column_index] * \
+                                                               self.constraint_matrix.constraint_matrix[
+                                                               self.exit_variable_index,
+                                                               :]
 
+    def update_revised_simplex_known_terms(self):
+        """
+        Questo è da farsi allo stesso modo del pivoting. Questo lo devo aggiornare con la procedura di pivoting.
+        :math:`b_i = b_i+\\frac{b_r}{a_{rk}}*c_{k}` cioè gli devo aggiungere :math:`c_k` volte la nuova r-esima riga,
+        cioè quella uscente.
+
+        """
+        self._known_terms = self._known_terms.astype('float')
+        self._known_terms = np.dot(self.constraint_matrix.base_matrix, self._known_terms)
+
+    def update_revised_simplex_cost_vector(self):
+        """
+        Questo mi tocca gestirlo in 2 tempi:
+            * Prima scambio i costi ridotti della variabile di base associata alla leaving row index :math:`X_{Br}`
+            * Poi aggiungo reduced :math:`c_k` volte la r-esima riga aggiornata
+        :return:
+        """
+        # TODO: TROVARE UN MODO MIGLIORE DI FARE QUESTO
+        self.cost_vector._c = self.cost_vector._c.astype('float')
+        self._reduced_cost_vector._c = self._reduced_cost_vector._c.astype('float')
         self.reduced_cost_total_vector = self.reduced_cost_total_vector.reshape(
-            self.constraint_matrix.constraint_matrix.shape[
-                1]) - critical_reduced_cost * self.constraint_matrix.constraint_matrix[self.exit_variable_index, :]
+            self.constraint_matrix.constraint_matrix.shape[1]) - \
+                                         self.reduced_cost_non_base[
+                                             self.entering_column_index] * self.constraint_matrix.constraint_matrix[
+                                                                           self.exit_variable_index, :]
 
     def __str__(self):
         from prettytable import PrettyTable
@@ -303,8 +314,10 @@ class LinearProgram:
         return x.__str__()
 
     def __next__(self):
-        self.update_revised_simplex_matrix_entire_rows()
-        # self.update_revised_simplex_cost_vector()
+        self.update_revised_simplex_constraint_matrix()
+        self.update_revised_simplex_known_terms()
+        self.update_revised_simplex_cost_vector()
+        print(self)
 
 
 if __name__ == '__main__':
